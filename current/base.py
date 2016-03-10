@@ -1,6 +1,19 @@
 # -*- coding: utf-8 -*-
 
-import random
+import random, re
+
+class InvalidTypeException(Exception):
+    def __init__(self, value):
+        self.value = "Invalid type for create command, expected {}, got {}.".format(', '.join(types), value)
+    def __str__(self):
+        return repr(self.value)
+
+class InvalidNameException(Exception):
+    def __init__(self, value):
+        self.value = "Entity with name {} is not created.".format(value)
+    def __str__(self):
+        return repr(self.value)
+
 
 created = {}
 
@@ -16,11 +29,12 @@ class Dice(object):
 		else:
 			self.vals = args
 		self.name = name
+		self.latest = None
 
 	def roll(self, *options):
 		options = tuple(options)
 
-		choice = ''
+		choice = []
 		mod = 0
 
 		if options == ():
@@ -29,8 +43,13 @@ class Dice(object):
 			count = options[0]
 
 		for x in range(count):
-			choice += str(int(random.choice(self.vals))+mod) + ' '
+			choice += random.choice(self.vals)
 
+		self.latest = choice[-1]
+		
+		if len(choice) == 1:
+			return choice[0]
+		
 		return choice
 
 class Deck(object):
@@ -44,22 +63,28 @@ class Deck(object):
 				self._vals = tuple(args)
 		self.shuffle()
 		self.name = name
+		self.latest = None
 
 	def roll(self, count = None):
-		choice = ''
+		choice = []
 		if count == None:
 			count = 1
 
-		for x in range(count):
+		for x in range(1, count+1):
 			try:
 				t = random.choice(self.vals)
+				self.latest = t
 			except:
 				msg = "The deck {0} is empty. Type \"shuffle {0}\" to shuffle deck.".format(self.name)
 				if choice != '':
 					msg = choice+'\n'+msg
 				return msg
-			choice += t + ' '
+			choice.append(t)
 			self.vals.remove(t)
+
+		if len(choice) == 1:
+			choice = choice[0]
+
 		return choice
 
 	def shuffle(self):
@@ -67,14 +92,14 @@ class Deck(object):
 
 class Pool(object):
 	def __init__(self, name, content):
-		self.content = [created[x] for x in content.split()]
+		self.content = [x for x in content.split() if x != name]
 		self.name = name
 
 	def roll(self, count = None):
 		if count == None:
 			count = 1
-		gen = lambda x: x.name + ': ' + x.roll()
-		return '\n'.join([gen(x) for y in range(count) for x in self.content]) + '\n'
+		choice = []
+		return roll('+'.join(self.content), count)
 
 decks = {
 		 "Default": ('1 spades', '1 clubs', '1 hearts', '1 diamonds',
@@ -103,3 +128,68 @@ decks = {
 		}
 
 dices = {"Default": ('1', '2', '3', '4', '5', '6')}
+
+types = {"deck": Deck, "dice": Dice, "pool": Pool}
+
+def get_entity(name):
+	pat = re.compile(r"^d[0-9]+$")
+	if pat.match(name):
+		return Dice(name, name.split('d')[1])
+	else:
+		try:
+			return created[name]
+		except:
+			raise InvalidNameException(name)
+
+def set_entity(name, val):
+	created[name] = val
+
+def create(type, name, *args):
+	try:
+		c = types[type](name, *args)
+		set_entity(name, c)
+		return "{} {} sucessfully created\n".format(type, name)
+	except KeyError:
+		raise InvalidTypeException(type)
+
+def roll(name, count = None):
+	if count == None:
+		count = 1
+	count = int(count)
+	try:
+		int(name)
+		return name
+	except:
+		if '+' in name:
+			i = 0
+			name = name.split('+')
+			r = []
+			for x in range(1, int(count)+1):
+				r.append({})
+				for member in name:
+					r[-1][member+":"+str(i)] = roll(member)
+					i += 1
+			return m_print(r)
+		else:
+			try:
+				return get_entity(name).roll(int(count))
+			except KeyError:
+				raise InvalidNameException(name)
+
+def latest(name):
+	return m_print(get_entity(name).latest)
+
+def m_print(data):
+	r = ''
+	if type(data) == type(int()) or type(data) == type(str()):
+		r = str(data)
+
+	elif type(data) == type(list()):
+		for i, e in enumerate(data):
+			r += "{}: {}\n".format(i+1, m_print(e))
+
+	elif type(data) == type(dict()):
+		for i in data:
+			r += "\t{}: {}\n".format(i[:i.index(":")], m_print(data[i]))
+
+	return r
